@@ -93,14 +93,20 @@ async def index_files_to_db(bot, chat, lst_msg_id, msg):
 
                 if not messages:
                     break
-                
+
                 for message in reversed(messages):  # Process messages in correct order
-                    if not message or not message.media:
+                    if not message:
                         continue
 
-                    file_name = message.document.file_name if message.document else message.video.file_name
-                    file_id = message.document.file_id if message.document else message.video.file_id
-
+                    # Check for video or document specifically
+                    if message.video:
+                        file_name = message.video.file_name
+                        file_id = message.video.file_id
+                    elif message.document:
+                        file_name = message.document.file_name
+                        file_id = message.document.file_id
+                    else:
+                        continue  # Skip if not a video or document
                     if file_id not in existing_file_ids:
                         items.append({"title": file_name, "file_id": file_id})
                         existing_file_ids.add(file_id)  # Add to the set
