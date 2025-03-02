@@ -1,7 +1,7 @@
-from fastapi import FastAPI
+from fastapi import APIRouter
 import json
 
-app = FastAPI()
+router = APIRouter()
 
 MOVIE_DB = "movies.json"
 TVSHOW_DB = "tvshows.json"
@@ -14,16 +14,16 @@ def load_db(filename):
     except:
         return []
 
-@app.get("/")
+@router.get("/")
 async def root():
     return {"message": "API is running!"}
 
-@app.get("/movies")
+@router.get("/movies")
 async def get_movies():
     """Fetch all movies"""
     return {"movies": load_db(MOVIE_DB)}
 
-@app.get("/tvshows")
+@router.get("/tvshows")
 async def get_tvshows():
     """Fetch all TV shows"""
     return {"tvshows": load_db(TVSHOW_DB)}
