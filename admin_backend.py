@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import FastAPI, APIRouter
 import json
 
+app = FastAPI()
 router = APIRouter()
 
 MOVIE_DB = "movies.json"
@@ -40,3 +41,5 @@ async def clear_requests():
     """Admin API to Clear All Requests"""
     save_db(REQUESTS_DB, [])
     return {"status": "✅ All requests cleared."}
+
+app.include_router(router, prefix="/admin")  # Explicitly add the router to FastAPI
