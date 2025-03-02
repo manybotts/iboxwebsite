@@ -77,38 +77,51 @@ async def index_files_to_db(bot, chat, lst_msg_id, msg):
     async with lock:
         found_files = 0
         try:
-            async for message in bot.iter_messages(chat, lst_msg_id, offset_id=temp.CURRENT):
+            # Load the appropriate database *once* outside the loop
+            category = "movies" if chat == MOVIE_CHANNEL_ID else "tvshows"
+            db_file = MOVIE_DB if category == "movies" else TVSHOW_DB
+            items = load_db(db_file)
+            existing_file_ids = {item["file_id"] for item in items} # Use a set for efficiency
+
+            offset = temp.CURRENT
+            while True:
                 if temp.CANCEL:
                     await msg.edit("❌ **Indexing canceled!**")
                     return
 
-                if not message or not message.media:
-                    continue
+                messages = await bot.get_messages(chat, list(range(lst_msg_id - offset - 99, lst_msg_id - offset + 1)))
 
-                file_name = message.document.file_name if message.document else message.video.file_name
-                file_id = message.document.file_id if message.document else message.video.file_id
+                if not messages:
+                    break
+                
+                for message in reversed(messages):  # Process messages in correct order
+                    if not message or not message.media:
+                        continue
 
-                # Determine category based on chat ID
-                category = "movies" if chat == MOVIE_CHANNEL_ID else "tvshows"
-                db_file = MOVIE_DB if category == "movies" else TVSHOW_DB
-                items = load_db(db_file)
+                    file_name = message.document.file_name if message.document else message.video.file_name
+                    file_id = message.document.file_id if message.document else message.video.file_id
 
-                if not any(item["file_id"] == file_id for item in items):
-                    items.append({"title": file_name, "file_id": file_id})
-                    save_db(db_file, items)
-                    found_files += 1
+                    if file_id not in existing_file_ids:
+                        items.append({"title": file_name, "file_id": file_id})
+                        existing_file_ids.add(file_id)  # Add to the set
+                        found_files += 1
 
                 if found_files % 20 == 0:
-                    await msg.edit(f"📡 Indexing `{category}`: {found_files} files indexed...")
-
-                await asyncio.sleep(0.5)  # Rate limiting
+                        await msg.edit(f"📡 Indexing `{category}`: {found_files} files indexed...")
+                offset += 100
+                await asyncio.sleep(0.5)
 
         except Exception as e:
             logger.exception(f"Error during indexing: {e}")
             await msg.edit(f"❌ **An error occurred during indexing: {e}**")
             return
+        finally:
+            # Save changes to the database *after* the loop (or in the except block)
+            save_db(db_file, items)
+            await msg.edit(f"✅ **Indexing completed!** {found_files} files added.")
 
-    await msg.edit(f"✅ **Indexing completed!** {found_files} files added.")
+
+
 
 @app.on_message(filters.forwarded)
 async def forwarded_index(client, message):
