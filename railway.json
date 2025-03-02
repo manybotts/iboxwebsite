@@ -1,0 +1,15 @@
+{
+  "services": [
+    {
+      "name": "telegram-movie-backend",
+      "envs": {
+        "API_ID": "YOUR_TELEGRAM_API_ID",
+        "API_HASH": "YOUR_TELEGRAM_API_HASH",
+        "BOT_TOKEN": "YOUR_TELEGRAM_BOT_TOKEN",
+        "MOVIE_CHANNEL_ID": "YOUR_MOVIE_CHANNEL_ID",
+        "TVSHOW_CHANNEL_ID": "YOUR_TVSHOW_CHANNEL_ID",
+        "ADMIN_ID": "YOUR_TELEGRAM_USER_ID"
+      }
+    }
+  ]
+}
