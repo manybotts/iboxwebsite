@@ -1,28 +1,43 @@
 from fastapi import APIRouter, Query, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import json
 import os
+import logging
 
 router = APIRouter()
 
-# Database files
-MOVIE_DB = "movies.json"
-TVSHOW_DB = "tvshows.json"
+# Enable CORS for frontend (Vercel)
+def add_cors_middleware(app):
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Allow requests from anywhere (Update for security)
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+# Logging setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Database files (Ensure correct absolute paths)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MOVIE_DB = os.path.join(BASE_DIR, "movies.json")
+TVSHOW_DB = os.path.join(BASE_DIR, "tvshows.json")
 
 # Load database function
 def load_db(filename):
     """Load JSON database safely."""
-    if os.path.exists(filename):
-        with open(filename, "r") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return []
-    return []
+    if not os.path.exists(filename):
+        logger.warning(f"Database file {filename} not found, returning empty list.")
+        return []
 
-# Save database function
-def save_db(filename, data):
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=4)
+    with open(filename, "r") as f:
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            logger.error(f"Error reading {filename}, returning empty list.")
+            return []
 
 @router.get("/")
 async def root():
@@ -57,7 +72,4 @@ async def search(query: str = Query(..., title="Search Query")):
     if not matching_movies and not matching_tvshows:
         raise HTTPException(status_code=404, detail="No matching results found")
 
-    return {
-        "movies": matching_movies,
-        "tvshows": matching_tvshows
-    }
+    return {"movies": matching_movies, "tvshows": matching_tvshows}
