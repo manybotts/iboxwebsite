@@ -1,19 +1,21 @@
 from fastapi import APIRouter
 import json
+import os
 
-router = APIRouter(prefix="/admin")  # Ensure the /admin prefix is set
+router = APIRouter()
 
 MOVIE_DB = "movies.json"
 TVSHOW_DB = "tvshows.json"
-REQUESTS_DB = "requests.json"
 
 def load_db(filename):
-    """Loads a database from JSON"""
+    """Loads the database from JSON"""
+    if not os.path.exists(filename):
+        return []  # Return empty list if the file doesn't exist
     try:
         with open(filename, "r") as f:
             return json.load(f)
-    except:
-        return []
+    except json.JSONDecodeError:
+        return []  # Return empty list if JSON is corrupted
 
 def save_db(filename, data):
     """Saves data to JSON"""
@@ -22,21 +24,38 @@ def save_db(filename, data):
 
 @router.get("/movies")
 async def get_movies():
-    """Admin API to Fetch All Movies"""
+    """Fetch all movies"""
     return {"movies": load_db(MOVIE_DB)}
 
 @router.get("/tvshows")
 async def get_tvshows():
-    """Admin API to Fetch All TV Shows"""
+    """Fetch all TV shows"""
     return {"tvshows": load_db(TVSHOW_DB)}
 
-@router.get("/requests")
-async def get_requests():
-    """Admin API to View Pending Requests"""
-    return {"requests": load_db(REQUESTS_DB)}
+@router.post("/movies")
+async def add_movie(movie: dict):
+    """Add a new movie manually"""
+    movies = load_db(MOVIE_DB)
+    movies.append(movie)
+    save_db(MOVIE_DB, movies)
+    return {"status": "✅ Movie added"}
 
-@router.delete("/requests/clear")
-async def clear_requests():
-    """Admin API to Clear All Requests"""
-    save_db(REQUESTS_DB, [])
-    return {"status": "✅ All requests cleared."}
+@router.post("/tvshows")
+async def add_tvshow(tvshow: dict):
+    """Add a new TV show manually"""
+    tvshows = load_db(TVSHOW_DB)
+    tvshows.append(tvshow)
+    save_db(TVSHOW_DB, tvshows)
+    return {"status": "✅ TV show added"}
+
+@router.delete("/movies/clear")
+async def clear_movies():
+    """Clear all movies"""
+    save_db(MOVIE_DB, [])
+    return {"status": "✅ All movies cleared"}
+
+@router.delete("/tvshows/clear")
+async def clear_tvshows():
+    """Clear all TV shows"""
+    save_db(TVSHOW_DB, [])
+    return {"status": "✅ All TV shows cleared"}
