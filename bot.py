@@ -7,16 +7,16 @@ import re
 import logging
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
 
 # Load environment variables
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-MOVIE_CHANNEL_ID = int(os.getenv("MOVIE_CHANNEL_ID"))  # Keep as int for now, but string is generally safer
-TVSHOW_CHANNEL_ID = int(os.getenv("TVSHOW_CHANNEL_ID"))   # Keep as int for now
+MOVIE_CHANNEL_ID = int(os.getenv("MOVIE_CHANNEL_ID"))
+TVSHOW_CHANNEL_ID = int(os.getenv("TVSHOW_CHANNEL_ID"))
 ADMINS = [int(admin) for admin in os.getenv("ADMINS", "").split(",") if admin]
 
 # Initialize bot
@@ -26,13 +26,13 @@ app = Client("movie_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 MOVIE_DB = "movies.json"
 TVSHOW_DB = "tvshows.json"
 
-# Asynchronous lock to prevent concurrent indexing
+# Asynchronous lock
 lock = asyncio.Lock()
 
 # Track indexing status
 class IndexStatus:
     CANCEL = False
-    CURRENT = 0  # Skip this many messages
+    CURRENT = 0
 
 temp = IndexStatus()
 
@@ -43,11 +43,11 @@ def load_db(filename):
     try:
         with open(filename, "r") as f:
             return json.load(f)
-    except json.JSONDecodeError:
-        logger.exception("Error decoding JSON from %s", filename)
+    except (json.JSONDecodeError, FileNotFoundError) as e:
+        logger.error(f"Error loading {filename}: {e}")
         return []
     except Exception as e:
-        logger.exception("Error loading database from %s: %s", filename, e)
+        logger.exception(f"Unexpected error loading {filename}: {e}")
         return []
 
 def save_db(filename, data):
@@ -55,7 +55,8 @@ def save_db(filename, data):
         with open(filename, "w") as f:
             json.dump(data, f, indent=4)
     except Exception as e:
-        logger.exception("Error saving to database %s: %s", filename, e)
+        logger.exception(f"Error saving to {filename}: {e}")
+
 
 @app.on_message(filters.command("start"))
 async def start(client, message):
@@ -63,7 +64,7 @@ async def start(client, message):
     await message.reply(
         "**🎬 Welcome to the Telegram Movie Bot!**\n\n"
         "✅ This bot indexes movies & TV shows from authorized channels.\n"
-        "📡 Forward a message from a channel or send a channel link to start indexing.\n"
+        "📡 Forward a message from a channel to start indexing.\n"
         "🔍 Type a movie name to search.\n"
         "🚀 **Forward a message now to begin!**"
     )
@@ -87,6 +88,7 @@ async def index_files_to_db(bot, chat, lst_msg_id, msg):
                 file_name = message.document.file_name if message.document else message.video.file_name
                 file_id = message.document.file_id if message.document else message.video.file_id
 
+                # Determine category based on chat ID
                 category = "movies" if chat == MOVIE_CHANNEL_ID else "tvshows"
                 db_file = MOVIE_DB if category == "movies" else TVSHOW_DB
                 items = load_db(db_file)
@@ -102,33 +104,31 @@ async def index_files_to_db(bot, chat, lst_msg_id, msg):
                 await asyncio.sleep(0.5)  # Rate limiting
 
         except Exception as e:
-            logger.exception("Error during indexing: %s", e)
+            logger.exception(f"Error during indexing: {e}")
             await msg.edit(f"❌ **An error occurred during indexing: {e}**")
             return
 
     await msg.edit(f"✅ **Indexing completed!** {found_files} files added.")
 
-
 @app.on_message(filters.forwarded)
 async def forwarded_index(client, message):
-    """Handle forwarded messages from channels"""
-    if message.forward_from_chat:
+    """Handle forwarded messages"""
+    if message.forward_from_chat:  # Forwarded from a channel
         chat_id = message.forward_from_chat.id
         lst_msg_id = message.forward_from_message_id
 
         if chat_id not in [MOVIE_CHANNEL_ID, TVSHOW_CHANNEL_ID]:
             await message.reply("❌ **Invalid channel!** Only authorized channels can be indexed.")
             return
-
         try:
             chat_member = await client.get_chat_member(chat_id, "me")
             if chat_member.status not in (enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER):
                 await message.reply("❌ **I am not an administrator in this channel. I need to be an admin to index files.**")
                 return
-
         except Exception as e:
-            await message.reply(f"❌ Error accesssing channel information {e}")
+            await message.reply(f"❌ Error accessing channel information {e}")
             return
+
 
         buttons = InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ Yes, Index Full Channel", callback_data=f"index_full_{chat_id}_{lst_msg_id}")],
@@ -136,39 +136,66 @@ async def forwarded_index(client, message):
         ])
         await message.reply("📡 **Do you want to index the full channel or just this message?**", reply_markup=buttons)
 
-    else:
-        # Handle manually forwarded messages (no "Forwarded from" tag)
+    else: # Manually forwarded
         if message.document or message.video:
-            file_name = message.document.file_name if message.document else message.video.file_name
-            file_id = message.document.file_id if message.document else message.video.file_id
-            category = "movies"  # Default to movies, or try to determine from context if possible
-            db_file = MOVIE_DB if category == "movies" else TVSHOW_DB
-            items = load_db(db_file)
+             buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎬 Movie", callback_data=f"save_manual_movie")],
+                [InlineKeyboardButton("📺 TV Show", callback_data=f"save_manual_tvshow")]
+            ])
+             await message.reply("Is this a movie or a TV show?", reply_markup=buttons)
 
-            if not any(item["file_id"] == file_id for item in items):
+@app.on_callback_query(filters.regex("^save_manual_(movie|tvshow)$"))
+async def save_manual_callback(client, callback_query):
+    message = callback_query.message.reply_to_message
+    category = callback_query.data.split("_")[2]
+    if message.document or message.video:
+        file_name = message.document.file_name if message.document else message.video.file_name
+        file_id = message.document.file_id if message.document else message.video.file_id
+        db_file = MOVIE_DB if category == "movie" else TVSHOW_DB
+        items = load_db(db_file)
+        if not any(item["file_id"] == file_id for item in items):
                 items.append({"title": file_name, "file_id": file_id})
                 save_db(db_file, items)
-                await message.reply(f"✅ **Saved `{file_name}` successfully!**")
+                await callback_query.message.edit_text(f"✅ **Saved `{file_name}` to {category}!**")
+        else:
+                await callback_query.message.edit_text(f"✅ **`{file_name}` already exists!**")
 
-@app.on_callback_query(filters.regex("^index_full_(\\d+)_(\\d+)$"))
+@app.on_callback_query(filters.regex("^index_full_"))
 async def full_index_callback(client, callback_query):
     """Handles full channel indexing."""
-    chat_id, lst_msg_id = map(int, callback_query.data.split("_")[2:])
+    data_parts = callback_query.data.split("_")
+    chat_id_str = data_parts[2]  # Get chat_id as string
+    lst_msg_id = int(data_parts[3])  # lst_msg_id is always an integer
 
+    # Handle both numeric IDs and usernames
+    try:
+        chat_id = int(chat_id_str) if chat_id_str.lstrip("-").isdigit() else chat_id_str
+    except ValueError:
+        await callback_query.message.edit_text("❌ Invalid chat ID format.")
+        return
     msg = await callback_query.message.edit_text("⏳ **Starting full indexing... Please wait.**")
-    await index_files_to_db(client, chat_id, lst_msg_id, msg)
+    await index_files_to_db(client, chat_id, lst_msg_id, msg)  # Await the function call
 
-@app.on_callback_query(filters.regex("^index_single_(\\d+)_(\\d+)$"))
+
+@app.on_callback_query(filters.regex("^index_single_"))
 async def single_index_callback(client, callback_query):
     """Handles single file indexing."""
-    chat_id, lst_msg_id = map(int, callback_query.data.split("_")[2:])
+    data_parts = callback_query.data.split("_")
+    chat_id_str = data_parts[2]
+    lst_msg_id = int(data_parts[3])
 
     try:
-        async for message in client.iter_messages(chat_id, lst_msg_id, limit=1):  # Limit to 1
-            if message.document or message.video:
+        chat_id = int(chat_id_str) if chat_id_str.lstrip("-").isdigit() else chat_id_str
+    except ValueError:
+        await callback_query.message.edit_text("❌ Invalid chat ID format.")
+        return
+
+    try:
+        message = await client.get_messages(chat_id, lst_msg_id) # Use get_messages for a single message
+        if message.document or message.video:
                 file_name = message.document.file_name if message.document else message.video.file_name
                 file_id = message.document.file_id if message.document else message.video.file_id
-                category = "movies"  # Default to movies
+                category = "movies" if chat_id == MOVIE_CHANNEL_ID else "tvshows" # Determine based on the channel
                 db_file = MOVIE_DB if category == "movies" else TVSHOW_DB
                 items = load_db(db_file)
 
@@ -176,7 +203,8 @@ async def single_index_callback(client, callback_query):
                     items.append({"title": file_name, "file_id": file_id})
                     save_db(db_file, items)
                     await callback_query.message.edit_text(f"✅ **Saved `{file_name}` successfully!**")
-                    return # Exit after saving one file
+                else:
+                    await callback_query.message.edit_text(f"✅ **`{file_name}` already exists!**")
     except Exception as e:
         await callback_query.message.edit_text(f"❌ **An error occurred: {e}**")
 
@@ -191,7 +219,6 @@ async def set_skip(client, message):
             await message.reply("❌ Invalid skip count. Please provide a number.")
     else:
         await message.reply("❌ Please provide a skip count (e.g., `/setskip 100`).")
-
 
 @app.on_message(filters.command("cancel") & filters.user(ADMINS))
 async def cancel_indexing(client, message):
