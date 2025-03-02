@@ -1,4 +1,5 @@
 from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import os
 import json
 import asyncio
@@ -88,79 +89,70 @@ async def index_files_to_db(bot, chat, lst_msg_id, msg):
 
     await msg.edit(f"✅ **Indexing completed!** {found_files} files added.")
 
-@app.on_message(filters.command("index") & filters.user(ADMINS))
-async def index_channel(client, message):
-    """Manually scan all existing movies and TV shows"""
-    status_message = await message.reply("⏳ **Starting full indexing... Please wait.**")
-
-    await index_files_to_db(client, MOVIE_CHANNEL_ID, 0, status_message)
-    await index_files_to_db(client, TVSHOW_CHANNEL_ID, 0, status_message)
-
-    await status_message.edit("✅ **Full scan completed!** Movies & TV shows updated.")
-
-@app.on_message(filters.video | filters.document)
-async def auto_index(client, message):
-    """Automatically index new movies or TV shows as they are uploaded"""
-    chat_id = message.chat.id
-    category = "movies" if chat_id == MOVIE_CHANNEL_ID else "tvshows"
-
-    file_name = message.video.file_name if message.video else message.document.file_name
-    file_id = message.video.file_id if message.video else message.document.file_id
-
-    db_file = MOVIE_DB if category == "movies" else TVSHOW_DB
-    items = load_db(db_file)
-
-    # Avoid duplicate entries
-    if not any(item["file_id"] == file_id for item in items):
-        items.append({"title": file_name, "file_id": file_id})
-        save_db(db_file, items)
-
-        await message.reply(f"✅ **Automatically indexed `{file_name}` in {category.capitalize()}!**")
-
 @app.on_message(filters.forwarded)
 async def forwarded_index(client, message):
-    """Trigger indexing when a forwarded message is received"""
-    if not message.forward_from_chat:
-        await message.reply("❌ **Invalid forward!** Please forward a message from a movie channel.")
-        return
+    """Handle forwarded messages from channels"""
+    if message.forward_from_chat:
+        # Message was forwarded from a channel
+        chat_id = message.forward_from_chat.id
+        lst_msg_id = message.forward_from_message_id
 
-    chat_id = message.forward_from_chat.id
-    lst_msg_id = message.forward_from_message_id
+        if chat_id not in [MOVIE_CHANNEL_ID, TVSHOW_CHANNEL_ID]:
+            await message.reply("❌ **Invalid channel!** This bot only indexes authorized movie/TV show channels.")
+            return
+        
+        # Ask user whether to index full channel or just this message
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Yes, Index Full Channel", callback_data=f"index_full_{chat_id}_{lst_msg_id}")],
+            [InlineKeyboardButton("❌ No, Just Save This File", callback_data=f"index_single_{chat_id}_{lst_msg_id}")]
+        ])
+        await message.reply("📡 **Do you want to index the full channel or just this message?**", reply_markup=buttons)
+    
+    else:
+        # Message was manually forwarded (no "Forwarded from" tag)
+        if message.document or message.video:
+            file_name = message.document.file_name if message.document else message.video.file_name
+            file_id = message.document.file_id if message.document else message.video.file_id
 
-    if chat_id not in [MOVIE_CHANNEL_ID, TVSHOW_CHANNEL_ID]:
-        await message.reply("❌ **Invalid channel!** This bot only indexes authorized movie/TV show channels.")
-        return
+            category = "movies"
+            db_file = MOVIE_DB if category == "movies" else TVSHOW_DB
+            items = load_db(db_file)
 
-    msg = await message.reply("⏳ **Starting indexing from this message...**")
+            # Avoid duplicate entries
+            if not any(item["file_id"] == file_id for item in items):
+                items.append({"title": file_name, "file_id": file_id})
+                save_db(db_file, items)
+
+                await message.reply(f"✅ **Saved `{file_name}` successfully!**")
+
+@app.on_callback_query(filters.regex("^index_full_(\\d+)_(\\d+)$"))
+async def full_index_callback(client, callback_query):
+    """Handles full indexing when user selects 'Yes'"""
+    chat_id, lst_msg_id = map(int, callback_query.data.split("_")[2:])
+    
+    msg = await callback_query.message.edit_text("⏳ **Starting full indexing... Please wait.**")
     await index_files_to_db(client, chat_id, lst_msg_id, msg)
 
-@app.on_message(filters.regex(r"https://t.me/c/(\d+)/(\d+)"))
-async def link_index(client, message):
-    """Trigger indexing when a channel link is sent"""
-    match = re.search(r"https://t.me/c/(\d+)/(\d+)", message.text)
-    if not match:
-        await message.reply("❌ **Invalid link!** Please send a valid channel message link.")
-        return
+@app.on_callback_query(filters.regex("^index_single_(\\d+)_(\\d+)$"))
+async def single_index_callback(client, callback_query):
+    """Handles single file indexing when user selects 'No'"""
+    chat_id, lst_msg_id = map(int, callback_query.data.split("_")[2:])
 
-    chat_id, lst_msg_id = int(match.group(1)), int(match.group(2))
+    async for message in client.iter_messages(chat_id, lst_msg_id):
+        if message.document or message.video:
+            file_name = message.document.file_name if message.document else message.video.file_name
+            file_id = message.document.file_id if message.document else message.video.file_id
 
-    if chat_id not in [MOVIE_CHANNEL_ID, TVSHOW_CHANNEL_ID]:
-        await message.reply("❌ **Invalid channel!** This bot only indexes authorized movie/TV show channels.")
-        return
+            category = "movies"
+            db_file = MOVIE_DB if category == "movies" else TVSHOW_DB
+            items = load_db(db_file)
 
-    msg = await message.reply("⏳ **Starting indexing from this message...**")
-    await index_files_to_db(client, chat_id, lst_msg_id, msg)
+            if not any(item["file_id"] == file_id for item in items):
+                items.append({"title": file_name, "file_id": file_id})
+                save_db(db_file, items)
 
-@app.on_message(filters.command("setskip") & filters.user(ADMINS))
-async def set_skip(client, message):
-    """Allows admins to set how many messages to skip before indexing"""
-    args = message.text.split()
-    if len(args) < 2 or not args[1].isdigit():
-        await message.reply("❌ **Invalid usage!** Use `/setskip <number>`")
-        return
-
-    temp.CURRENT = int(args[1])
-    await message.reply(f"✅ **Skip set to {temp.CURRENT} messages!**")
+            await callback_query.message.edit_text(f"✅ **Saved `{file_name}` successfully!**")
+            return
 
 @app.on_message(filters.command("cancel") & filters.user(ADMINS))
 async def cancel_indexing(client, message):
