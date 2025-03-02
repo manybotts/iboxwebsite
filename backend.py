@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import FastAPI, APIRouter
 import json
 
+app = FastAPI()
 router = APIRouter()
 
 MOVIE_DB = "movies.json"
@@ -27,3 +28,5 @@ async def get_movies():
 async def get_tvshows():
     """Fetch all TV shows"""
     return {"tvshows": load_db(TVSHOW_DB)}
+
+app.include_router(router)  # Explicitly add the router to FastAPI
