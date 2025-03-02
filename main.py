@@ -1,11 +1,11 @@
 from fastapi import FastAPI
-from backend import app as backend_app
-from admin_backend import app as admin_app
+import backend
+import admin_backend
 
 app = FastAPI()
 
-# Mount the backend routes
-app.mount("/", backend_app)
+# Include backend routes (User API)
+app.include_router(backend.router, prefix="")
 
-# Mount the admin routes
-app.mount("/admin", admin_app)
+# Include admin routes (Admin API)
+app.include_router(admin_backend.router, prefix="/admin")
