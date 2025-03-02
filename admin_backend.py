@@ -1,7 +1,7 @@
-from fastapi import FastAPI
+from fastapi import APIRouter
 import json
 
-app = FastAPI()
+router = APIRouter()
 
 MOVIE_DB = "movies.json"
 TVSHOW_DB = "tvshows.json"
@@ -20,22 +20,22 @@ def save_db(filename, data):
     with open(filename, "w") as f:
         json.dump(data, f, indent=4)
 
-@app.get("/movies")
+@router.get("/movies")
 async def get_movies():
     """Admin API to Fetch All Movies"""
     return {"movies": load_db(MOVIE_DB)}
 
-@app.get("/tvshows")
+@router.get("/tvshows")
 async def get_tvshows():
     """Admin API to Fetch All TV Shows"""
     return {"tvshows": load_db(TVSHOW_DB)}
 
-@app.get("/requests")
+@router.get("/requests")
 async def get_requests():
     """Admin API to View Pending Requests"""
     return {"requests": load_db(REQUESTS_DB)}
 
-@app.delete("/requests/clear")
+@router.delete("/requests/clear")
 async def clear_requests():
     """Admin API to Clear All Requests"""
     save_db(REQUESTS_DB, [])
