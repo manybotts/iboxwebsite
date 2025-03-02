@@ -1,11 +1,11 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import APIRouter
 import json
 
-app = FastAPI()
-router = APIRouter()
+router = APIRouter(prefix="/admin")  # Ensure the /admin prefix is set
 
 MOVIE_DB = "movies.json"
 TVSHOW_DB = "tvshows.json"
+REQUESTS_DB = "requests.json"
 
 def load_db(filename):
     """Loads a database from JSON"""
@@ -15,18 +15,28 @@ def load_db(filename):
     except:
         return []
 
-@router.get("/")
-async def root():
-    return {"message": "API is running!"}
+def save_db(filename, data):
+    """Saves data to JSON"""
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=4)
 
 @router.get("/movies")
 async def get_movies():
-    """Fetch all movies"""
+    """Admin API to Fetch All Movies"""
     return {"movies": load_db(MOVIE_DB)}
 
 @router.get("/tvshows")
 async def get_tvshows():
-    """Fetch all TV shows"""
+    """Admin API to Fetch All TV Shows"""
     return {"tvshows": load_db(TVSHOW_DB)}
 
-app.include_router(router)  # Explicitly add the router to FastAPI
+@router.get("/requests")
+async def get_requests():
+    """Admin API to View Pending Requests"""
+    return {"requests": load_db(REQUESTS_DB)}
+
+@router.delete("/requests/clear")
+async def clear_requests():
+    """Admin API to Clear All Requests"""
+    save_db(REQUESTS_DB, [])
+    return {"status": "✅ All requests cleared."}
