@@ -14,12 +14,16 @@ def load_db(filename):
     except:
         return []
 
+@app.get("/")
+async def root():
+    return {"message": "API is running!"}
+
 @app.get("/movies")
 async def get_movies():
-    """Fetches all movies from the database"""
+    """Fetch all movies"""
     return {"movies": load_db(MOVIE_DB)}
 
 @app.get("/tvshows")
 async def get_tvshows():
-    """Fetches all TV shows from the database"""
+    """Fetch all TV shows"""
     return {"tvshows": load_db(TVSHOW_DB)}
